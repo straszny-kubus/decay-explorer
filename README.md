@@ -26,6 +26,7 @@ node tools/serve.js 8123 site   # preview the built site at http://localhost:812
 node tools/serve.js 8123        # preview index.html straight from the source folder
 node tools/build-data.js        # rebuild nuclides.json from data/iaea-ground-states.csv
 node tools/make-icons.js        # redraw the icons
+node tools/check-solver.js      # check the solver against every chain and known physics
 ```
 
 To refresh the nuclide data from the IAEA:
