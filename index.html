@@ -1,0 +1,911 @@
+<title>Decay Chain Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..100,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one phone-width column. The chain scrolls like a nuclide-chart strip; time controls sit pinned to the bottom edge like an instrument panel. */
+:root {
+  --bg: #eceff3;
+  --surface: #ffffff;
+  --ink: #141a23;
+  --muted: #5a6577;
+  --line: #d3d9e1;
+  --track: #e1e6ec;
+  --accent: #2b78cf;
+  --danger: #c0392b;
+  /* Decay-mode colors follow the Karlsruhe nuclide chart: alpha yellow, beta-minus blue, EC/beta-plus red,
+     fission green, proton orange, neutron light blue, isomeric transition white, stable black */
+  --alpha: #e9b500;  --alpha-ink: #2e2300;
+  --beta: #2b78cf;   --beta-ink: #ffffff;
+  --ec: #d9466a;     --ec-ink: #ffffff;
+  --sf: #2f9e62;     --sf-ink: #ffffff;
+  --p: #ec8a1f;      --p-ink: #2b1700;
+  --n: #8cc9e8;      --n-ink: #0b2230;
+  --it: #d9dde3;     --it-ink: #141a23;
+  --stable: #141a23; --stable-ink: #ffffff;
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1117; --surface: #141b24; --ink: #e6ebf1; --muted: #93a0b3; --line: #253041; --track: #212b38;
+    --accent: #5aa5f2; --danger: #f07a6a;
+    --alpha: #f0c419; --alpha-ink: #261d00; --beta: #4a97eb; --beta-ink: #04111e; --ec: #ec6b8a; --ec-ink: #22040d;
+    --sf: #4cc283; --sf-ink: #03170c; --p: #f4a04a; --p-ink: #2b1700; --n: #8cc9e8; --n-ink: #0b2230;
+    --it: #3a4555; --it-ink: #e6ebf1; --stable: #e6ebf1; --stable-ink: #0c1117; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1117; --surface: #141b24; --ink: #e6ebf1; --muted: #93a0b3; --line: #253041; --track: #212b38;
+  --accent: #5aa5f2; --danger: #f07a6a;
+  --alpha: #f0c419; --alpha-ink: #261d00; --beta: #4a97eb; --beta-ink: #04111e; --ec: #ec6b8a; --ec-ink: #22040d;
+  --sf: #4cc283; --sf-ink: #03170c; --p: #f4a04a; --p-ink: #2b1700; --n: #8cc9e8; --n-ink: #0b2230;
+  --it: #3a4555; --it-ink: #e6ebf1; --stable: #e6ebf1; --stable-ink: #0c1117; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+.wrap {
+  max-width: 600px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 220px;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px;
+}
+
+/* Header */
+.eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+h1 { font-family: var(--f-display); font-stretch: 75%; font-weight: 800; font-size: 30px; line-height: 1.05; margin: 4px 0 12px; text-wrap: balance; }
+h1 .arrow { color: var(--muted); font-weight: 500; }
+.sample { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sample label { font-weight: 600; }
+.sample input, .sample select, .pick {
+  font: 500 15px var(--f-mono); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px;
+}
+.sample input { width: 96px; }
+.pick { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.pick svg { width: 12px; height: 12px; fill: var(--muted); }
+.sample .err { color: var(--danger); font-size: 13px; width: 100%; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Summary */
+.summary { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stat { min-width: 0; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.stat .v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.curve-wrap { display: grid; gap: 4px; }
+.curve-wrap .k { font-size: 12px; color: var(--muted); }
+#curve { width: 100%; height: auto; display: block; overflow: visible; }
+.ts { margin: 0; font-size: 14px; color: var(--muted); }
+.ts b { color: var(--ink); font-weight: 600; }
+
+/* Chain */
+.chain-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+h2 { font-family: var(--f-display); font-stretch: 80%; font-weight: 700; font-size: 20px; margin: 0; }
+.seg { display: inline-flex; background: var(--track); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button {
+  font: 600 13px var(--f-body); color: var(--muted); background: transparent; border: 0;
+  border-radius: 8px; padding: 7px 12px; min-height: 34px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.scale-note { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.status { margin: 12px 0 0; color: var(--muted); }
+.status.bad { color: var(--danger); }
+
+#rows { list-style: none; margin: 10px 0 0; padding: 0; display: grid; }
+.row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; position: relative; padding-block: 6px; }
+/* the vertical decay line threading the main chain */
+.row.main:not(.last)::before {
+  content: ""; position: absolute; left: 25px; top: 58px; bottom: -6px; width: 2px; background: var(--line);
+}
+.row.side { grid-template-columns: 40px minmax(0, 1fr); margin-left: 38px; }
+.row.side::after {
+  content: ""; position: absolute; left: -12px; top: 0; width: 10px; height: 24px;
+  border-left: 2px dashed var(--line); border-bottom: 2px dashed var(--line); border-bottom-left-radius: 6px;
+}
+
+.tile {
+  width: 52px; height: 52px; border-radius: 6px; display: grid; grid-template-columns: auto auto;
+  align-content: center; justify-content: center; column-gap: 1px;
+  background: var(--tile); color: var(--tile-ink); position: relative; z-index: 1;
+}
+.row.side .tile, .result .tile { width: 40px; height: 40px; }
+.tile .az { display: grid; font: 500 9px/1.1 var(--f-mono); text-align: right; align-content: center; }
+.tile .sym { font: 800 22px/1 var(--f-display); font-stretch: 85%; }
+.row.side .tile .sym, .result .tile .sym { font-size: 17px; }
+.m-alpha  { --tile: var(--alpha);  --tile-ink: var(--alpha-ink); }
+.m-beta   { --tile: var(--beta);   --tile-ink: var(--beta-ink); }
+.m-ec     { --tile: var(--ec);     --tile-ink: var(--ec-ink); }
+.m-sf     { --tile: var(--sf);     --tile-ink: var(--sf-ink); }
+.m-p      { --tile: var(--p);      --tile-ink: var(--p-ink); }
+.m-n      { --tile: var(--n);      --tile-ink: var(--n-ink); }
+.m-it     { --tile: var(--it);     --tile-ink: var(--it-ink); }
+.m-stable { --tile: var(--stable); --tile-ink: var(--stable-ink); }
+
+.info { min-width: 0; display: grid; gap: 4px; align-content: center; }
+.line1, .line2 { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.name { font-weight: 650; min-width: 0; }
+.val { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+.line2 { font-size: 12px; color: var(--muted); }
+.line2 .abs { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.line2 .how { min-width: 0; }
+.bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--tile); border-radius: 3px; }
+.m-it .bar i, .m-n .bar i { background: var(--muted); }
+
+.notes { font-size: 12.5px; color: var(--muted); display: grid; gap: 6px; }
+.notes p { margin: 0; max-width: 65ch; }
+
+/* Bottom time panel */
+.panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  background: var(--surface); border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 20px rgba(0,0,0,.06);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.panel-in { max-width: 600px; margin: 0 auto; display: grid; gap: 8px; }
+.readout { display: flex; align-items: center; gap: 12px; }
+.play {
+  flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--ink); color: var(--bg); display: grid; place-items: center;
+}
+.play svg { width: 18px; height: 18px; fill: currentColor; }
+.tnow { min-width: 0; }
+.tnow .big { font: 800 26px/1 var(--f-display); font-stretch: 80%; font-variant-numeric: tabular-nums; }
+.tnow .sub { font-size: 12.5px; color: var(--muted); }
+
+.slider { position: relative; padding-bottom: 18px; }
+#time { width: 100%; margin: 0; height: 32px; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+#time::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--track); }
+#time::-moz-range-track { height: 6px; border-radius: 3px; background: var(--track); }
+#time::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; margin-top: -9px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+#time::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.ticks { position: absolute; left: 12px; right: 12px; bottom: 0; height: 16px; }
+.ticks span { position: absolute; transform: translateX(-50%); font: 500 10.5px var(--f-mono); color: var(--muted); white-space: nowrap; }
+.ticks span::before { content: ""; position: absolute; left: 50%; top: -7px; width: 1px; height: 5px; background: var(--muted); opacity: .6; }
+
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button {
+  flex: none; font: 600 12.5px var(--f-body); color: var(--ink); background: var(--track);
+  border: 0; border-radius: 999px; padding: 7px 12px; min-height: 32px; cursor: pointer;
+}
+.chips button .num { color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+/* Isotope picker sheet */
+.backdrop {
+  position: fixed; inset: 0; z-index: 20; background: rgba(6, 10, 16, .5);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  background: var(--surface); width: 100%; max-width: 600px; max-height: 88vh; height: 88vh;
+  border-radius: 16px 16px 0 0; display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sheet-head {
+  display: grid; gap: 10px; padding-top: 16px; padding-bottom: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.sheet-title h2 { font-size: 22px; }
+.close { border: 0; background: var(--track); color: var(--ink); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 18px; line-height: 1; }
+#search {
+  width: 100%; font: 500 16px var(--f-body); color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px;
+}
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+#results {
+  list-style: none; margin: 0; overflow-y: auto; flex: 1; overscroll-behavior: contain;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 16px;
+}
+.result button {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line);
+  padding: 8px 2px; color: var(--ink); font: inherit; cursor: pointer;
+}
+.result button:hover { background: var(--bg); }
+.result .rname { font-weight: 650; }
+.result .rsub { font-size: 12px; color: var(--muted); }
+.result .rhl { font: 500 12.5px var(--f-mono); color: var(--muted); white-space: nowrap; }
+
+@media (min-width: 520px) {
+  h1 { font-size: 36px; }
+  .stat .v { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<main class="wrap" id="main">
+  <header>
+    <div class="eyebrow" id="eyebrow">Decay chain</div>
+    <h1 id="title">Loading…</h1>
+    <div class="sample">
+      <label for="mass">Sample</label>
+      <input id="mass" type="number" inputmode="decimal" value="1" min="0" step="any" aria-describedby="mass-err">
+      <select id="unit" aria-label="Mass unit">
+        <option value="1e-6">µg</option>
+        <option value="1e-3">mg</option>
+        <option value="1" selected>g</option>
+        <option value="1e3">kg</option>
+        <option value="1e6">t</option>
+      </select>
+      <span>of</span>
+      <button type="button" class="pick" id="pick" aria-haspopup="dialog">
+        <span id="pick-label">U-238</span>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4z"/></svg>
+      </button>
+      <span>at t = 0</span>
+      <span class="err" id="mass-err" hidden>Enter a mass above zero.</span>
+    </div>
+  </header>
+
+  <section class="summary" aria-label="Sample summary">
+    <div class="stats">
+      <div class="stat"><div class="k" id="s-parent-k">Parent left</div><div class="v" id="s-parent">–</div></div>
+      <div class="stat"><div class="k">Stable products</div><div class="v" id="s-stable">–</div></div>
+      <div class="stat"><div class="k">Activity</div><div class="v" id="s-act">–</div></div>
+    </div>
+    <div class="curve-wrap">
+      <div class="k">Total activity over time (log–log)</div>
+      <svg id="curve" viewBox="0 0 340 120" role="img" aria-label="Total activity of the sample against time"></svg>
+    </div>
+    <p class="ts" id="ts-line"></p>
+  </section>
+
+  <section aria-labelledby="comp-h">
+    <div class="chain-head">
+      <h2 id="comp-h">Composition</h2>
+      <div class="seg" role="group" aria-label="Measure">
+        <button type="button" id="mode-atoms" data-mode="atoms" aria-pressed="true">Atoms</button>
+        <button type="button" id="mode-mass" data-mode="mass" aria-pressed="false">Mass</button>
+        <button type="button" id="mode-activity" data-mode="activity" aria-pressed="false">Activity</button>
+      </div>
+    </div>
+    <p class="scale-note" id="scale-note"></p>
+    <p class="status" id="status">Loading the nuclide table…</p>
+    <ol id="rows"></ol>
+  </section>
+
+  <footer class="notes">
+    <p>Amounts are solved exactly with the Bateman equations for every branch of the chain. Tiny values that fall below double-precision noise are shown as zero.</p>
+    <p>Data: IAEA LiveChart of Nuclides ground states (ENSDF / NUBASE), plus the isomers Pa-234m, Ba-137m and Tc-99m. Branches under 0.0001 % are left out; where a branch has no published percentage it shares what the known branches leave. Fission ends in a single "fission products" entry. Helium and other emitted particles are assumed to leave the sample, so mass shares count heavy atoms only.</p>
+    <p>"Every atom stable" is the time when less than one radioactive atom is expected to remain. It grows with the logarithm of the sample size.</p>
+  </footer>
+</main>
+
+<div class="panel" id="panel">
+  <div class="panel-in">
+    <div class="readout">
+      <button type="button" class="play" id="play" aria-label="Play">
+        <svg viewBox="0 0 24 24" id="play-icon"><path d="M7 4.5v15l13-7.5z"/></svg>
+      </button>
+      <div class="tnow">
+        <div class="big num" id="t-big">0 s</div>
+        <div class="sub" id="t-sub">&nbsp;</div>
+      </div>
+    </div>
+    <div class="slider">
+      <input id="time" type="range" min="0" max="1000" step="1" value="0" aria-label="Time since the sample was pure">
+      <div class="ticks" id="ticks" aria-hidden="true"></div>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
+<div class="backdrop" id="picker" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="picker-h">
+    <div class="sheet-head">
+      <div class="sheet-title">
+        <h2 id="picker-h">Choose an isotope</h2>
+        <button type="button" class="close" id="picker-close" aria-label="Close">✕</button>
+      </div>
+      <input id="search" type="search" placeholder="U-238, radium, 137Cs…" autocomplete="off" spellcheck="false" aria-label="Search isotopes">
+      <p class="hint" id="search-hint"></p>
+    </div>
+    <ul id="results"></ul>
+  </div>
+</div>
+
+<script id="core">
+// ---- Constants ----
+const YEAR = 31557600, DAY = 86400, MIN = 60, HOUR = 3600;
+const NA = 6.02214076e23, LN2 = Math.LN2;
+const ELEMENTS = ["", "Hydrogen", "Helium", "Lithium", "Beryllium", "Boron", "Carbon", "Nitrogen", "Oxygen", "Fluorine", "Neon",
+  "Sodium", "Magnesium", "Aluminium", "Silicon", "Phosphorus", "Sulfur", "Chlorine", "Argon", "Potassium", "Calcium",
+  "Scandium", "Titanium", "Vanadium", "Chromium", "Manganese", "Iron", "Cobalt", "Nickel", "Copper", "Zinc",
+  "Gallium", "Germanium", "Arsenic", "Selenium", "Bromine", "Krypton", "Rubidium", "Strontium", "Yttrium", "Zirconium",
+  "Niobium", "Molybdenum", "Technetium", "Ruthenium", "Rhodium", "Palladium", "Silver", "Cadmium", "Indium", "Tin",
+  "Antimony", "Tellurium", "Iodine", "Xenon", "Caesium", "Barium", "Lanthanum", "Cerium", "Praseodymium", "Neodymium",
+  "Promethium", "Samarium", "Europium", "Gadolinium", "Terbium", "Dysprosium", "Holmium", "Erbium", "Thulium", "Ytterbium",
+  "Lutetium", "Hafnium", "Tantalum", "Tungsten", "Rhenium", "Osmium", "Iridium", "Platinum", "Gold", "Mercury",
+  "Thallium", "Lead", "Bismuth", "Polonium", "Astatine", "Radon", "Francium", "Radium", "Actinium", "Thorium",
+  "Protactinium", "Uranium", "Neptunium", "Plutonium", "Americium", "Curium", "Berkelium", "Californium", "Einsteinium", "Fermium",
+  "Mendelevium", "Nobelium", "Lawrencium", "Rutherfordium", "Dubnium", "Seaborgium", "Bohrium", "Hassium", "Meitnerium", "Darmstadtium",
+  "Roentgenium", "Copernicium", "Nihonium", "Flerovium", "Moscovium", "Livermorium", "Tennessine", "Oganesson"];
+
+// ---- Nuclide table ----
+// Loaded from nuclides.json rows: [id, Z, halfLife_s | null, atomicMass_u, [[mode, branch, daughterId], ...]]
+const DB = {};
+function loadDB(json) {
+  for (const [id, Z, hl, m, decays] of json.nuclides) {
+    const [el, A] = id.split("-");
+    const total = decays.reduce((s, d) => s + d[1], 0);   // branches are rounded in the file; make them sum to 1
+    DB[id] = { id, el, Z, A, name: `${ELEMENTS[Z] || el}-${A}`, hl: hl === null ? Infinity : hl, m,
+      decays: decays.map(([mode, b, to]) => ({ mode, b: b / total, to })) };
+  }
+}
+// Fission has no single daughter: each fissioning nuclide gets its own "fission products" sink.
+function nuclide(id) {
+  if (DB[id]) return DB[id];
+  const parent = DB[id.slice(3)];   // "SF:<parent id>"
+  return (DB[id] = { id, el: "FP", Z: "", A: "", name: `Fission products of ${parent.id}`, hl: Infinity, m: parent.m, decays: [], sink: true });
+}
+const daughters = id => nuclide(id).decays.map(d => ({ ...d, to: d.to === "SF" ? `SF:${id}` : d.to }));
+
+// ---- Chain solver ----
+// Amounts evolve as N(t) = exp(A·t)·N(0), with A the decay matrix. A has no negative off-diagonal terms, so
+// exp(A·2^k) can be built by uniformization and repeated squaring using only sums of non-negative numbers:
+// nothing cancels, and even 10⁻²⁰-sized amounts keep full precision. The closed-form Bateman solution
+// loses all accuracy in long chains with near-equal half-lives; this does not.
+// Any t is then a product of at most ~53 of those matrices, one per binary digit of t.
+const lower = (n) => new Float64Array(n * n);   // lower-triangular n×n, row-major
+function matmul(n, X, Y) {
+  const Z = lower(n);
+  for (let i = 0; i < n; i++) for (let k = 0; k <= i; k++) {
+    const x = X[i * n + k];
+    if (x === 0) continue;
+    for (let j = 0; j <= k; j++) Z[i * n + j] += x * Y[k * n + j];
+  }
+  return Z;
+}
+function matvec(n, M, v) {
+  const w = new Float64Array(n);
+  for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j <= i; j++) s += M[i * n + j] * v[j]; w[i] = s; }
+  return w;
+}
+
+function buildChain(rootId) {
+  const found = [rootId], seen = new Set(found);
+  for (let k = 0; k < found.length; k++) for (const d of daughters(found[k])) if (!seen.has(d.to)) { seen.add(d.to); found.push(d.to); }
+
+  // topological sort, ties broken by discovery order
+  const pending = found.slice(), ids = [];
+  const indeg = new Map(pending.map(id => [id, 0]));
+  for (const id of pending) for (const d of daughters(id)) indeg.set(d.to, indeg.get(d.to) + 1);
+  while (pending.length) {
+    const id = pending.splice(pending.findIndex(x => indeg.get(x) === 0), 1)[0];
+    ids.push(id);
+    for (const d of daughters(id)) indeg.set(d.to, indeg.get(d.to) - 1);
+  }
+
+  const n = ids.length, idx = new Map(ids.map((id, i) => [id, i]));
+  // a nuclide with a half-life but no listed decay mode ends the chain
+  const lam = ids.map(id => (isFinite(nuclide(id).hl) && nuclide(id).decays.length ? LN2 / nuclide(id).hl : 0));
+  const parents = ids.map(() => []);
+  ids.forEach((id, k) => daughters(id).forEach(d => parents[idx.get(d.to)].push({ k, b: d.b })));
+
+  // time levels 2^k seconds: from well below the fastest decay to beyond the last atom of the slowest
+  const radio = lam.filter(l => l > 0);
+  const lmax = radio.length ? Math.max(...radio) : 1, lmin = radio.length ? Math.min(...radio) : 1;
+  const kmin = Math.min(-40, Math.floor(Math.log2(1 / (16 * lmax))));
+  const kmax = Math.ceil(Math.log2(200 / lmin));
+
+  // exp(A·h) at the smallest level: A·h = P − μI with P ≥ 0, so exp(A·h) = e^(−μ)·Σ P^m/m!, all terms non-negative
+  const h = 2 ** kmin, mu = lmax * h, P = lower(n);
+  for (let i = 0; i < n; i++) {
+    P[i * n + i] = mu - lam[i] * h;
+    for (const { k, b } of parents[i]) P[i * n + k] += b * lam[k] * h;
+  }
+  let E = lower(n), term = lower(n);
+  for (let i = 0; i < n; i++) E[i * n + i] = term[i * n + i] = 1;
+  for (let m = 1; m < 40; m++) {
+    term = matmul(n, term, P);
+    let size = 0;
+    for (let x = 0; x < term.length; x++) { term[x] /= m; E[x] += term[x]; size = Math.max(size, term[x]); }
+    if (size < 1e-20) break;
+  }
+  const scale = Math.exp(-mu);
+  for (let x = 0; x < E.length; x++) E[x] *= scale;
+  // The diagonal is known exactly, e^(−λ·2^k). Squaring it instead would lose slow decays,
+  // because e^(−λh) rounds to 1 when λh is tiny.
+  const exactDiagonal = (M, k) => { for (let i = 0; i < n; i++) M[i * n + i] = Math.exp(-lam[i] * 2 ** k); return M; };
+  const levels = [exactDiagonal(E, kmin)];
+  for (let k = kmin + 1; k <= kmax; k++) levels.push(exactDiagonal(matmul(n, levels[levels.length - 1], levels[levels.length - 1]), k));
+
+  return { ids, n, lam, parents, levels, kmin, kmax, nuclides: ids.map(nuclide) };
+}
+
+// Fractions of the initial atom count at time t (seconds).
+function evaluate(ch, t) {
+  const { n, levels, kmin, kmax } = ch;
+  let v = new Float64Array(n);
+  v[0] = 1;
+  let rest = t;
+  for (let guard = 0; rest >= 2 ** kmax && guard < 64; guard++) { v = matvec(n, levels[kmax - kmin], v); rest -= 2 ** kmax; }
+  for (let k = kmax; k >= kmin && rest > 0; k--) {
+    const s = 2 ** k;
+    if (s <= rest) { v = matvec(n, levels[k - kmin], v); rest -= s; }
+  }
+  return v;
+}
+
+function radioactiveFraction(ch, N) { let r = 0; for (let i = 0; i < ch.n; i++) if (ch.lam[i] > 0) r += N[i]; return r; }
+function activityPerAtom(ch, N) { let a = 0; for (let i = 0; i < ch.n; i++) a += ch.lam[i] * N[i]; return a; }
+
+// Time when fewer than one radioactive atom is expected to remain.
+function timeAllStable(ch, atoms0) {
+  let lo = -15, hi = 45;   // log10 seconds
+  for (let k = 0; k < 80; k++) {
+    const mid = (lo + hi) / 2;
+    if (radioactiveFraction(ch, evaluate(ch, 10 ** mid)) * atoms0 > 1) lo = mid; else hi = mid;
+  }
+  return 10 ** hi;
+}
+
+// Equilibrium: total activity relative to the parent's levels off while the parent is still present
+// (until 99.9 % of it has decayed). Returns when the ratio first reaches 99 % of that plateau, or null
+// when it never settles, e.g. when a daughter outlives the parent. Long-lived traces with negligible
+// activity, like Bi-209 in the uranium series, don't disturb it.
+function timeEquilibrium(ch, logLo, tEnd) {
+  if (!ch.lam[0]) return null;
+  const logEnd = Math.log10(Math.min(tEnd, 10 * LN2 / ch.lam[0])), pts = [];
+  for (let k = 0; k <= 300; k++) {
+    const t = 10 ** (logLo + (logEnd - logLo) * k / 300), N = evaluate(ch, t);
+    pts.push([t, activityPerAtom(ch, N) / (ch.lam[0] * N[0])]);
+  }
+  const plateau = pts[pts.length - 1][1];
+  if (!(plateau > 1.01)) return null;
+  const k = pts.findIndex(p => Math.abs(p[1] / plateau - 1) <= 0.01 && pts.slice(pts.indexOf(p)).every(q => Math.abs(q[1] / plateau - 1) <= 0.01));
+  return k >= 0 && pts[pts.length - 1][0] / pts[k][0] >= 10 ? pts[k][0] : null;
+}
+
+// Display order: the most likely path from the root, with each side branch listed under its main feeder.
+function displayOrder(ch) {
+  const idx = new Map(ch.ids.map((id, i) => [id, i]));
+  const main = [ch.ids[0]];
+  for (;;) {
+    const ds = daughters(main[main.length - 1]);
+    if (!ds.length) break;
+    main.push(ds.reduce((a, b) => (b.b > a.b ? b : a)).to);
+  }
+  const onMain = new Set(main), under = new Map();
+  ch.ids.forEach((id, i) => {
+    if (onMain.has(id)) return;
+    const feeder = ch.parents[i].reduce((a, b) => (b.b > a.b ? b : a)).k;
+    if (!under.has(feeder)) under.set(feeder, []);
+    under.get(feeder).push(i);
+  });
+  const order = [];
+  const emit = (i, side) => { order.push({ i, side }); (under.get(i) || []).forEach(j => emit(j, true)); };
+  main.forEach(id => emit(idx.get(id), false));
+  return { order, main };
+}
+</script>
+
+<script>
+// ---- Formatting ----
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻" };
+const sup = n => String(n).split("").map(ch => SUP[ch]).join("");
+function sci(x, p = 3) {
+  if (x === 0) return "0";
+  let e = Math.floor(Math.log10(Math.abs(x))), m = (x / 10 ** e).toPrecision(p);
+  if (Math.abs(+m) >= 10) { e += 1; m = (x / 10 ** e).toPrecision(p); }
+  return `${m}×10${sup(e)}`;
+}
+const plain = (x, p = 3) => String(+x.toPrecision(p));
+const num = (x, p = 3) => (x === 0 ? "0" : x >= 1e-3 && x < 1e5 ? plain(x, p) : sci(x, p));
+
+function fmtPct(f) {
+  if (f === 0) return "0 %";
+  if (f === 1) return "100 %";
+  if (f > 0.9999) return "> 99.99 %";
+  const p = f * 100;
+  return (p >= 0.001 ? plain(p, p >= 10 ? 4 : 3) : sci(p)) + " %";
+}
+function fmtPrefix(x, unit, prefixes) {
+  if (x === 0) return `0 ${unit}`;
+  for (const [f, pre] of prefixes) if (x >= f) return `${plain(x / f)} ${pre}${unit}`;
+  return `${sci(x)} ${unit}`;
+}
+const BQ = [[1e12, "T"], [1e9, "G"], [1e6, "M"], [1e3, "k"], [1, ""], [1e-3, "m"]];
+const G = [[1e6, "t"], [1e3, "k"], [1, ""], [1e-3, "m"], [1e-6, "µ"], [1e-9, "n"], [1e-12, "p"], [1e-15, "f"]];
+const fmtBq = a => (a >= 1e15 ? `${sci(a)} Bq` : fmtPrefix(a, "Bq", BQ));
+const fmtMass = g => (g >= 1e9 ? `${sci(g)} g` : fmtPrefix(g, "g", G).replace(" tg", " t"));
+function fmtAtoms(n) {
+  if (n === 0) return "0 atoms";
+  if (n >= 1e6) return `${sci(n)} atoms`;
+  if (n >= 1.5) return `${Math.round(n).toLocaleString("en-US")} atoms`;
+  return `${num(n, 2)} atoms expected`;
+}
+
+const TIME_UNITS = [
+  [1e9 * YEAR, "Gyr", "billion years"], [1e6 * YEAR, "Myr", "million years"], [1e3 * YEAR, "kyr", "thousand years"],
+  [YEAR, "yr", "years"], [DAY, "d", "days"], [HOUR, "h", "hours"], [MIN, "min", "minutes"], [1, "s", "seconds"],
+  [1e-3, "ms", "milliseconds"], [1e-6, "µs", "microseconds"], [1e-9, "ns", "nanoseconds"],
+];
+function fmtTime(s, p = 3, long = false) {
+  if (s === 0) return "0 s";
+  if (s >= 1e12 * YEAR) return `${sci(s / YEAR, p)} ${long ? "years" : "yr"}`;
+  for (const [f, short, word] of TIME_UNITS) if (s >= f || f === 1e-9) {
+    const v = s / f;
+    return `${v >= 1e4 ? sci(v, p) : v < 1e-3 ? sci(v, p) : plain(v, p)} ${long ? word : short}`;
+  }
+}
+
+const MODE_LABEL = {
+  "B-": "β⁻", "2B-": "2β⁻", "EC+B+": "EC/β⁺", "SF+EC+B+": "EC/β⁺", "EC": "EC", "B+": "β⁺", "2EC": "2EC", "2B+": "2β⁺",
+  "A": "α", "P": "p", "2P": "2p", "N": "n", "2N": "2n", "IT": "IT", "SF": "fission",
+  "B-N": "β⁻n", "B-2N": "β⁻2n", "B-3N": "β⁻3n", "B-4N": "β⁻4n", "B-5N": "β⁻5n", "B-6N": "β⁻6n", "B-7N": "β⁻7n",
+  "B-P": "β⁻p", "B-A": "β⁻α", "B-SF": "β⁻ fission", "ECP": "ECp", "B+P": "β⁺p", "EC2P": "EC2p", "B+2P": "β⁺2p",
+  "ECA": "ECα", "B+A": "β⁺α", "ECSF": "EC fission", "14C": "¹⁴C", "24NE": "²⁴Ne", "{+24}Ne": "²⁴Ne", "{+22}Ne": "²²Ne",
+  "{+25}Ne": "²⁵Ne", "Mg": "²⁸Mg", "34SI": "³⁴Si", "{+34}Si": "³⁴Si",
+};
+const modeLabel = m => MODE_LABEL[m] || m;
+function modeClass(nu) {
+  if (!nu.decays.length) return "m-stable";
+  const m = nu.decays.reduce((a, b) => (b.b > a.b ? b : a)).mode;
+  if (m.startsWith("B-") || m === "2B-") return "m-beta";
+  if (m === "A") return "m-alpha";
+  if (m === "SF" || m.endsWith("SF")) return "m-sf";
+  if (m === "IT") return "m-it";
+  if (m === "P" || m === "2P") return "m-p";
+  if (m === "N" || m === "2N") return "m-n";
+  if (/EC|B\+/.test(m)) return "m-ec";
+  return "m-alpha";   // cluster decays
+}
+const tileHTML = nu => `<div class="tile ${modeClass(nu)}" aria-hidden="true"><span class="az"><span>${nu.A}</span><span>${nu.Z}</span></span><span class="sym">${nu.el}</span></div>`;
+
+// ---- State ----
+const AGE_EARTH = 4.54e9 * YEAR, AGE_UNIVERSE = 13.8e9 * YEAR;
+const DEFAULT_ROOT = "U-238";
+const state = { root: DEFAULT_ROOT, t: 0, mode: "atoms", massG: 1, playing: false };
+let chain, view, atoms0, tStable, logLo, logHi, tEq, curvePts, rowRefs = [];
+const $ = id => document.getElementById(id);
+
+function setRoot(id) {
+  stop();
+  state.root = id;
+  chain = buildChain(id);
+  view = displayOrder(chain);
+  try { localStorage.setItem("decay.root", id); } catch {}
+  try { history.replaceState(null, "", "#" + id); } catch {}
+  buildHeader(); buildRows();
+  recompute();
+  state.t = tEq ?? Math.min(chain.nuclides[0].hl, tStable);   // open on an interesting moment
+  render();
+}
+
+function recompute() {
+  const root = chain.nuclides[0];
+  atoms0 = state.massG / root.m * NA;
+  tStable = timeAllStable(chain, atoms0);
+  logLo = Math.min(0, Math.floor(Math.log10(root.hl)) - 2);
+  logHi = Math.log10(tStable * 1.4);
+  tEq = timeEquilibrium(chain, logLo, tStable);
+  curvePts = [];
+  for (let k = 0; k <= 320; k++) {
+    const t = 10 ** (logLo + (logHi - logLo) * k / 320);
+    curvePts.push([t, activityPerAtom(chain, evaluate(chain, t)) * atoms0]);
+  }
+  buildTicks(); buildChips(); drawCurve(); render();
+}
+
+const tToP = t => (t <= 0 ? 0 : Math.min(1000, Math.max(1, (Math.log10(t) - logLo) / (logHi - logLo) * 1000)));
+const pToT = p => (p <= 0 ? 0 : 10 ** (logLo + (logHi - logLo) * p / 1000));
+
+// ---- Header ----
+// Heavy chains whose main path is only α, β and EC keep A mod 4, which names the classic series.
+const SERIES = ["thorium series · 4n", "neptunium series · 4n+1", "uranium series · 4n+2", "actinium series · 4n+3"];
+function buildHeader() {
+  const root = chain.nuclides[0], end = nuclide(view.main[view.main.length - 1]);
+  const conserves = view.main.slice(0, -1).every((id, k) =>
+    ["A", "B-", "EC", "EC+B+", "B+", "IT"].includes(daughters(id).find(d => d.to === view.main[k + 1]).mode));
+  const series = conserves && root.Z >= 81 && chain.n > 3 ? SERIES[+root.A.replace("m", "") % 4] : null;
+  $("eyebrow").textContent = `${series ?? "Decay chain"} · ${chain.n} nuclides`;
+  $("title").innerHTML = `${root.name} <span class="arrow">→</span> ${end.sink ? "fission products" : end.name}`;
+  $("pick-label").textContent = root.id;
+  $("s-parent-k").textContent = `${root.id} left`;
+  $("time").setAttribute("aria-label", `Time since the sample was pure ${root.id}`);
+}
+
+// ---- Rows ----
+function buildRows() {
+  const rowsEl = $("rows");
+  rowsEl.replaceChildren();
+  rowRefs = [];
+  view.order.forEach(({ i, side }, pos) => {
+    const nu = chain.nuclides[i];
+    const li = document.createElement("li");
+    const nextMain = view.order.slice(pos + 1).some(o => !o.side);
+    li.className = `row ${side ? "side" : "main"} ${modeClass(nu)}${!side && !nextMain ? " last" : ""}`;
+    const how = nu.decays.length
+      ? daughters(nu.id).map(d => `${modeLabel(d.mode)}${d.b < 1 ? " " + plain(d.b * 100, 4) + " %" : ""} → ${d.to.startsWith("SF:") ? "fission products" : d.to}`).join(" · ")
+      : nu.sink ? "fragments not followed further" : "stable";
+    li.innerHTML = `
+      ${tileHTML(nu)}
+      <div class="info">
+        <div class="line1"><span class="name">${nu.name}</span><span class="val"></span></div>
+        <div class="bar"><i></i></div>
+        <div class="line2"><span class="how">${isFinite(nu.hl) ? "T½ " + fmtTime(nu.hl, 4) + " · " : ""}${how}</span><span class="abs"></span></div>
+      </div>`;
+    rowsEl.appendChild(li);
+    rowRefs.push({ i, val: li.querySelector(".val"), bar: li.querySelector(".bar i"), abs: li.querySelector(".abs") });
+  });
+}
+
+const NOTES = {
+  atoms: "Share of all atoms in the sample. Bars use a log scale from 10⁻²⁴ to 100 % so trace amounts stay visible.",
+  mass: "Share of sample mass. Bars use a log scale from 10⁻²⁴ to 100 %.",
+  activity: "Share of decays per second. Bars are linear: in equilibrium every link in the chain decays at the same rate.",
+};
+const logBar = f => (f <= 0 ? 0 : Math.max(0, Math.min(100, (Math.log10(f) + 24) / 24 * 100)));
+
+function render() {
+  if (!chain) return;
+  const N = evaluate(chain, state.t);
+  const act = chain.lam.map((l, i) => l * N[i] * atoms0);
+  const actTot = act.reduce((a, b) => a + b, 0);
+  const mass = chain.nuclides.map((nu, i) => N[i] * atoms0 * nu.m / NA);
+  const massTot = mass.reduce((a, b) => a + b, 0);
+
+  for (const r of rowRefs) {
+    const i = r.i;
+    if (state.mode === "atoms") {
+      r.val.textContent = fmtPct(N[i]); r.abs.textContent = fmtAtoms(N[i] * atoms0); r.bar.style.width = logBar(N[i]) + "%";
+    } else if (state.mode === "mass") {
+      const f = mass[i] / massTot;
+      r.val.textContent = fmtPct(f); r.abs.textContent = fmtMass(mass[i]); r.bar.style.width = logBar(f) + "%";
+    } else {
+      const f = actTot > 0 ? act[i] / actTot : 0;
+      r.val.textContent = chain.lam[i] ? fmtPct(f) : "—"; r.abs.textContent = chain.lam[i] ? fmtBq(act[i]) : "no decays";
+      r.bar.style.width = f * 100 + "%";
+    }
+  }
+
+  let stable = 0;
+  chain.lam.forEach((l, i) => { if (!l) stable += N[i]; });
+  $("s-parent").textContent = fmtPct(N[0]);
+  $("s-stable").textContent = fmtPct(Math.min(stable, 1));
+  $("s-act").textContent = fmtBq(actTot);
+
+  const root = chain.nuclides[0];
+  $("t-big").textContent = fmtTime(state.t);
+  const left = radioactiveFraction(chain, N) * atoms0;
+  $("t-sub").textContent = state.t === 0 ? `Pure ${root.id}`
+    : left < 1 ? "Every atom is stable"
+    : state.t > AGE_UNIVERSE ? `${plain(state.t / AGE_UNIVERSE, 2)}× the age of the universe`
+    : `${fmtTime(state.t, 3, true)} after the sample was pure`;
+
+  const slider = $("time");
+  slider.value = tToP(state.t);
+  slider.setAttribute("aria-valuetext", fmtTime(state.t, 3, true));
+  moveCursor(state.t, actTot);
+}
+
+// ---- Time axis ----
+const TICKS = [[1e-9, "1 ns"], [1e-6, "1 µs"], [1e-3, "1 ms"], [1, "1 s"], [MIN, "1 min"], [HOUR, "1 h"], [DAY, "1 d"],
+  [YEAR, "1 yr"], [1e3 * YEAR, "1 kyr"], [1e6 * YEAR, "1 Myr"], [1e9 * YEAR, "1 Gyr"], [1e12 * YEAR, "10¹² yr"],
+  [1e15 * YEAR, "10¹⁵ yr"], [1e18 * YEAR, "10¹⁸ yr"], [1e21 * YEAR, "10²¹ yr"], [1e24 * YEAR, "10²⁴ yr"], [1e27 * YEAR, "10²⁷ yr"]];
+const frac = t => (Math.log10(t) - logLo) / (logHi - logLo);
+function pickTicks(minGap) {
+  const out = [];
+  for (const [t, label] of TICKS) {
+    const f = frac(t);
+    if (f < 0.04 || f > 0.96) continue;
+    if (out.length && f - out[out.length - 1][0] < minGap) continue;
+    out.push([f, label, t]);
+  }
+  return out;
+}
+
+// ---- Activity curve ----
+const SVGNS = "http://www.w3.org/2000/svg", CW = 340, CH = 120, CT = 8, CB = 104;
+let yLo, yHi;
+const cx = t => (t <= 0 ? 0 : Math.max(0, frac(t)) * CW);
+const cy = a => CB - (Math.log10(Math.max(a, 10 ** yLo)) - yLo) / (yHi - yLo) * (CB - CT);
+function el(tag, attrs, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text) e.textContent = text;
+  return e;
+}
+function drawCurve() {
+  const svg = $("curve");
+  svg.replaceChildren();
+  const peak = Math.max(...curvePts.map(p => p[1]));
+  yLo = Math.log10(Math.min(...chain.lam.filter(l => l > 0)));   // activity of one atom of the slowest member
+  yHi = Math.max(Math.log10(peak), yLo + 1) + 0.6;
+  const grid = [[peak, fmtBq(peak) + " peak"], [10 ** yLo, "≈ 1 atom left"]];
+  if (cy(1) > CT + 14 && cy(1) < CB - 14) grid.push([1, "1 Bq"]);
+  for (const [v, label] of grid) {
+    const y = cy(v);
+    svg.append(el("line", { x1: 0, x2: CW, y1: y, y2: y, stroke: "var(--line)", "stroke-dasharray": "3 3" }));
+    svg.append(el("text", { x: CW, y: y - 3, "text-anchor": "end", "font-size": 9, fill: "var(--muted)", "font-family": "var(--f-mono)" }, label));
+  }
+  for (const [f, label] of pickTicks(0.2)) {
+    svg.append(el("text", { x: f * CW, y: CH - 2, "text-anchor": "middle", "font-size": 9, fill: "var(--muted)", "font-family": "var(--f-mono)" }, label));
+    svg.append(el("line", { x1: f * CW, x2: f * CW, y1: CB, y2: CB + 4, stroke: "var(--muted)" }));
+  }
+  const pts = curvePts.map(([t, a]) => `${cx(t).toFixed(1)},${cy(a).toFixed(1)}`);
+  svg.append(el("path", { d: `M0,${CB} L${pts.join(" L")} L${CW},${CB} Z`, fill: "var(--accent)", "fill-opacity": 0.12 }));
+  svg.append(el("path", { d: `M${pts.join(" L")}`, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round" }));
+  svg.append(el("line", { id: "cur-line", y1: CT, y2: CB, stroke: "var(--ink)", "stroke-width": 1 }));
+  svg.append(el("circle", { id: "cur-dot", r: 4, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2 }));
+}
+function moveCursor(t, a) {
+  const x = cx(t), line = $("cur-line"), dot = $("cur-dot");
+  if (!line) return;
+  line.setAttribute("x1", x); line.setAttribute("x2", x);
+  dot.setAttribute("cx", x); dot.setAttribute("cy", cy(a));
+}
+
+// ---- Time controls ----
+function buildTicks() {
+  const box = $("ticks");
+  box.replaceChildren();
+  for (const [f, label] of pickTicks(0.13)) {
+    const s = document.createElement("span");
+    s.style.left = f * 100 + "%";
+    s.textContent = label;
+    box.append(s);
+  }
+}
+function buildChips() {
+  const box = $("chips"), root = chain.nuclides[0];
+  box.replaceChildren();
+  const chips = [["Start", 0], ["1 half-life", root.hl]];
+  if (tEq) chips.push(["Equilibrium", tEq]);
+  if (AGE_EARTH < tStable && frac(AGE_EARTH) > 0) chips.push(["Age of Earth", AGE_EARTH]);
+  chips.push(["Every atom stable", tStable]);
+  for (const [label, t] of chips) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `${label}${t ? `<span class="num">${fmtTime(t, 2)}</span>` : ""}`;
+    b.addEventListener("click", () => { stop(); state.t = t; render(); });
+    box.append(b);
+  }
+  const ratio = tStable / AGE_UNIVERSE;
+  // which nuclide holds the last radioactive atoms
+  const late = evaluate(chain, tStable / 2);
+  let lastI = 0;
+  chain.lam.forEach((l, i) => { if (l && late[i] > late[lastI]) lastI = i; });
+  const straggler = lastI ? chain.nuclides[lastI] : null;
+  $("ts-line").innerHTML =
+    `Every atom is stable after about <b>${fmtTime(tStable, 2, true)}</b>` +
+    (ratio >= 0.5 ? `, ${num(ratio, 2)}× the age of the universe.` : ".") +
+    (straggler ? ` The last radioactive atoms are ${straggler.name} (T½ ${fmtTime(straggler.hl, 3, true)}), from a minor branch.` : "") +
+    (tEq ? ` The chain reaches equilibrium after about <b>${fmtTime(tEq, 2, true)}</b>.` : "");
+}
+
+$("time").addEventListener("input", e => { stop(); state.t = pToT(+e.target.value); render(); });
+
+let raf = 0, last = 0;
+const PLAY_MS = 16000;
+function frame(now) {
+  const p = tToP(state.t) + (now - last) / PLAY_MS * 1000;
+  last = now;
+  if (p >= 1000) { state.t = pToT(1000); render(); stop(); return; }
+  state.t = pToT(p); render();
+  raf = requestAnimationFrame(frame);
+}
+function setPlayIcon(playing) {
+  $("play-icon").innerHTML = playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4.5v15l13-7.5z"/>';
+  $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
+}
+function stop() { if (!state.playing) return; state.playing = false; cancelAnimationFrame(raf); setPlayIcon(false); }
+$("play").addEventListener("click", () => {
+  if (!chain) return;
+  if (state.playing) return stop();
+  if (tToP(state.t) >= 999) state.t = 0;
+  state.playing = true; setPlayIcon(true);
+  last = performance.now(); raf = requestAnimationFrame(frame);
+});
+
+for (const b of document.querySelectorAll(".seg button")) b.addEventListener("click", () => {
+  state.mode = b.dataset.mode;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("scale-note").textContent = NOTES[state.mode];
+  render();
+});
+
+function onMass() {
+  const v = parseFloat($("mass").value) * +$("unit").value;
+  const ok = isFinite(v) && v > 0;
+  $("mass-err").hidden = ok;
+  if (ok && chain) { state.massG = v; recompute(); }
+}
+$("mass").addEventListener("input", onMass);
+$("unit").addEventListener("change", onMass);
+
+// ---- Isotope picker ----
+const POPULAR = ["U-238", "U-235", "Th-232", "Np-237", "Pu-239", "Am-241", "Ra-226", "Rn-222", "Po-210", "Cf-252",
+  "Cs-137", "Sr-90", "I-131", "Co-60", "Mo-99", "K-40", "C-14", "H-3"];
+let searchIndex = [];
+function buildSearchIndex() {
+  searchIndex = Object.values(DB).filter(nu => isFinite(nu.hl) && !nu.sink).map(nu => {
+    const sym = nu.el.toLowerCase(), name = ELEMENTS[nu.Z].toLowerCase(), A = nu.A.toLowerCase();
+    return { nu, sym, name, keys: [sym + A, A + sym, name + A, A + name] };
+  });
+}
+function search(q) {
+  q = q.toLowerCase().replace(/[\s\-_]/g, "");
+  if (!q) return { list: POPULAR.map(id => DB[id]).filter(Boolean), total: 0 };
+  const letters = /^[a-z]+$/.test(q);
+  const hits = [];
+  for (const e of searchIndex) {
+    let score = -1;
+    if (e.keys.includes(q)) score = 0;
+    else if (letters && (e.sym === q || e.name === q)) score = 1;
+    else if (letters && e.name.startsWith(q) && q.length >= 3) score = 2;
+    else if (e.keys.some(k => k.startsWith(q))) score = 3;
+    if (score >= 0) hits.push([score, e.nu]);
+  }
+  hits.sort((a, b) => a[0] - b[0] || a[1].Z - b[1].Z || parseInt(a[1].A) - parseInt(b[1].A) || a[1].A.length - b[1].A.length);
+  return { list: hits.slice(0, 60).map(h => h[1]), total: hits.length };
+}
+function showResults() {
+  const q = $("search").value, { list, total } = search(q);
+  $("search-hint").textContent = !q.trim() ? "Well-known isotopes. Type a symbol, element name or mass number to search all of them."
+    : !list.length ? "No radioactive isotope matches. Try a symbol like Ra or a mass number like 226."
+    : total > list.length ? `Showing ${list.length} of ${total}. Keep typing to narrow it down.` : `${total} match${total === 1 ? "" : "es"}`;
+  $("results").replaceChildren(...list.map(nu => {
+    const li = document.createElement("li");
+    li.className = "result";
+    const main = nu.decays.length ? nu.decays.reduce((a, b) => (b.b > a.b ? b : a)) : null;
+    li.innerHTML = `<button type="button">${tileHTML(nu)}<span><span class="rname">${nu.name}</span><br><span class="rsub">${main ? modeLabel(main.mode) + " → " + (main.to === "SF" ? "fission" : main.to) : ""}</span></span><span class="rhl">T½ ${fmtTime(nu.hl, 3)}</span></button>`;
+    li.querySelector("button").addEventListener("click", () => { closePicker(); setRoot(nu.id); window.scrollTo(0, 0); });
+    return li;
+  }));
+}
+function openPicker() {
+  if (!searchIndex.length) return;
+  $("picker").hidden = false;
+  document.body.style.overflow = "hidden";
+  $("search").value = "";
+  showResults();
+  $("search").focus();
+}
+function closePicker() {
+  $("picker").hidden = true;
+  document.body.style.overflow = "";
+  $("pick").focus();
+}
+$("pick").addEventListener("click", openPicker);
+$("picker-close").addEventListener("click", closePicker);
+$("picker").addEventListener("click", e => { if (e.target === $("picker")) closePicker(); });
+$("search").addEventListener("input", showResults);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("picker").hidden) closePicker(); });
+
+// keep the list clear of the pinned panel
+const panel = $("panel");
+new ResizeObserver(() => { $("main").style.paddingBottom = panel.offsetHeight + 24 + "px"; }).observe(panel);
+
+// ---- Start ----
+$("scale-note").textContent = NOTES.atoms;
+fetch("nuclides.json")
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(json => {
+    loadDB(json);
+    buildSearchIndex();
+    $("status").hidden = true;
+    let start = decodeURIComponent(location.hash.slice(1));
+    if (!DB[start] || !isFinite(DB[start].hl)) { try { start = localStorage.getItem("decay.root"); } catch { start = null; } }
+    setRoot(DB[start] && isFinite(DB[start].hl) ? start : DEFAULT_ROOT);
+  })
+  .catch(() => {
+    $("status").textContent = "The nuclide table (nuclides.json) didn't load. Reload the page to try again.";
+    $("status").classList.add("bad");
+    $("title").textContent = "Decay Chain Explorer";
+  });
+</script>

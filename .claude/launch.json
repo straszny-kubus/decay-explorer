@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "decay",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/serve.js", "8123"],
+      "port": 8123
+    },
+    {
+      "name": "decay-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/serve.js", "8124", "site"],
+      "port": 8124
+    }
+  ]
+}

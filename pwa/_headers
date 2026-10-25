@@ -1,0 +1,7 @@
+# Cloudflare Pages response headers (ignored by GitHub Pages)
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+/nuclides.json
+  Cache-Control: public, max-age=3600
