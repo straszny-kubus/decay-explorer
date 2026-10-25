@@ -1,0 +1,11 @@
+Decay Chain Explorer
+Copyright 2026 straszny-kubus
+
+This product includes software developed by straszny-kubus, licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+Nuclear data: nuclides.json and data/iaea-ground-states.csv are derived from
+the IAEA LiveChart of Nuclides (https://nds.iaea.org/livechart), which draws
+on ENSDF and NUBASE evaluations. These data are not covered by the Apache
+License; they are provided by the IAEA Nuclear Data Section, without warranty
+of correctness.

@@ -66,6 +66,15 @@ npx wrangler pages deploy site --project-name decay-chain-explorer
 GitHub Pages ignores that file; there, browsers check for a new service worker at most every 24 hours,
 usually sooner.
 
+## License
+
+The code is licensed under the [Apache License 2.0](LICENSE).
+
+The nuclear data in `nuclides.json` and `data/` comes from the
+[IAEA LiveChart of Nuclides](https://nds.iaea.org/livechart) (ENSDF / NUBASE evaluations). It is not covered by
+the Apache License. It is used with attribution and without any warranty of correctness; see [NOTICE](NOTICE).
+Fonts (Archivo, IBM Plex Mono) are loaded from Google Fonts under the SIL Open Font License.
+
 ## How updates reach installed copies
 
 `tools/build-site.js` stamps the service worker with a hash of the app files. When anything changes,
